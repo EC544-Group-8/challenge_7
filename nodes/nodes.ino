@@ -1,9 +1,9 @@
 /*
 Zombie nodes
 */
-int BlueLedPin = 5;
-int GreenLedPin = 6;
-int RedLedPin = 7;
+const int BlueLedPin = 5;
+const int GreenLedPin = 6;
+const int RedLedPin = 7;
 
 
 // the setup function runs once when you press reset or power the board
