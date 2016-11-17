@@ -1,5 +1,5 @@
 /*
-Zombie nodes
+LED blink test
 */
 const int BlueLedPin = 5;
 const int GreenLedPin = 6;
