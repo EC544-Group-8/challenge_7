@@ -18,33 +18,49 @@ Zombie nodes
 #define buttonPin 8
 
 
+int getUniqueID() {
+  // Generates unique ID on startup
+  // From http://stackoverflow.com
+  // /questions/21559264/unique-machine-id-for-arduino-project
+  uint32_t checksum = 0;
+  for(uint16_t u = 0; u < 2048; u++)
+  {
+    //checksum += the byte number u in the ram
+    checksum += * ( (byte *) u );
+  }
+  return checksum;
+}
+
 // Variables will change:
-int blueLedState = HIGH;     // the current state of the output pin
-int greenLedState = HIGH;    // the current state of the output pin
-int redLedState = HIGH;      // the current state of the output pin
-int buttonState;             // the current reading from the input pin
-int lastButtonState = LOW;   // the previous reading from the input pin
+int blueLedState  = HIGH;    // current state of output pin
+int greenLedState = HIGH;    // current state of output pin
+int redLedState   = HIGH;    // current state of output pin
+int buttonState;             // current reading from input pin
+int lastButtonState = LOW;   // the previous reading from input pin
 
 // to measure time in ms
 unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 unsigned long debounceDelay = 2;    // the debounce time; increase if the output flickers
 
-// the setup function runs once when you press reset or power the board
 void setup() {
+  // Get my unique ID
+  int ID = getUniqueID();
+
   // initialize digital pins with LEDs as an outputs.
-  pinMode(blueLedPin, OUTPUT);
+  pinMode(blueLedPin,  OUTPUT);
   pinMode(greenLedPin, OUTPUT);
-  pinMode(redLedPin, OUTPUT);
+  pinMode(redLedPin,   OUTPUT);
   
   // initialize the button as an input.
   pinMode(buttonPin, INPUT);
 
-    // set initial LED state
-  digitalWrite(blueLedPin, blueLedState);
+  // set initial LED state
+  digitalWrite(blueLedPin,  blueLedState);
   digitalWrite(greenLedPin, greenLedState);
-  digitalWrite(redLedPin, redLedState);
+  digitalWrite(redLedPin,   redLedState);
 
-  
+  Serial.begin(9600);
+  Serial.println(ID, HEX);
 }
 
 
