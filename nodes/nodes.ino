@@ -1,15 +1,3 @@
-/*
-Zombie nodes
-
- Debounced buttons (adapted from http://www.arduino.cc/en/Tutorial/Debounce)
-
- Each time the input pin goes from LOW to HIGH (e.g. because of a push-button
- press), the output pin is toggled from LOW to HIGH or HIGH to LOW.  There's
- a minimum delay of 1ms between toggles to debounce the circuit (i.e. to ignore
- noise).
-
-
-*/
 #include <XBee.h>
 #include <SoftwareSerial.h>
 #include <ArduinoSTL.h>
@@ -20,56 +8,27 @@ Zombie nodes
 #define GREEN_LED_PIN 6
 #define RED_LED_PIN 7
 #define BUTTON_PIN 8
-#define MAX_LOOPS 20000
 
-int round_number = 0;
-XBee xbee = XBee();
-XBeeResponse response = XBeeResponse();
-
-// create reusable response objects for responses we expect to handle 
-ZBRxResponse rx = ZBRxResponse();
-ModemStatusResponse msr = ModemStatusResponse();
-
-//AtCommandRequest atRequest = AtCommandRequest(dbCommand);
-ZBTxStatusResponse txStatus = ZBTxStatusResponse();
+// Xbee Declarations
 AtCommandResponse atResponse = AtCommandResponse();
 uint8_t dbCommand[] = {'D','B'};
 uint8_t discoveryCommand[] = {'N','D'};
 uint8_t myIdCommand[] = {'N', 'I'};
 AtCommandRequest atRequest = AtCommandRequest(discoveryCommand);
 AtCommandRequest myIdRequest = AtCommandRequest(myIdCommand);
-uint8_t BEACON_ID = 1;
 
+// Arduino Declarations
+XBee xbee = XBee();
 SoftwareSerial xbeeSerial(2,3);
-
-// Variables will change:
-int blueLedState  = HIGH;    // current state of output pin
-int greenLedState = HIGH;    // current state of output pin
-int redLedState   = HIGH;    // current state of output pin
 int buttonState;             // current reading from input pin
 int lastButtonState = LOW;   // the previous reading from input pin
-
 int myID;
+std::vector<int> connected_nodes; // For storing the IDs
 
 // to measure time in ms
 unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 unsigned long debounceDelay = 2;    // the debounce time; increase if the output flickers
 
-
-// Generates unique ID on startup
-// From http://stackoverflow.com/questions/21559264/unique-machine-id-for-arduino-project
-int getUniqueID() {
-  uint32_t checksum = 0;
-  for(uint16_t u = 0; u < 2048; u++)
-  {
-    //checksum += the byte number u in the ram
-    checksum += * ( (byte *) u );
-  }
-  return checksum;
-}
-
-// For storing the IDs
-std::vector<int> connected_nodes;
 void insertID(int id) {
     // If not already connected
     Serial.print("ID is:");
@@ -93,47 +52,29 @@ void initializePins() {
   pinMode(BUTTON_PIN, INPUT);
   
   // set initial LED state
-  digitalWrite(BLUE_LED_PIN,  blueLedState);
-  digitalWrite(GREEN_LED_PIN, greenLedState);
-  digitalWrite(RED_LED_PIN,   redLedState);
+  digitalWrite(BLUE_LED_PIN,  LOW);
+  digitalWrite(GREEN_LED_PIN, LOW);
+  digitalWrite(RED_LED_PIN,   LOW);
 
 }
 
-// Check to see if the button has been pressed since last loop
 int checkButtonPress(){
-    // read the state of the switch into a local variable:
+  // Check to see if the button has been pressed since last loop
   int reading = digitalRead(BUTTON_PIN);
   int buttonPressed = 0;
-  
-  // check to see if you just pressed the button
-  // (i.e. the input went from LOW to HIGH),  and you've waited
-  // long enough since the last press to ignore any noise:
-
-  // If the switch changed, due to noise or pressing:
   if (reading != lastButtonState) {
-    // reset the debouncing timer
     lastDebounceTime = millis();
   }
 
   if ((millis() - lastDebounceTime) > debounceDelay) {
-    // whatever the reading is at, it's been there for longer
-    // than the debounce delay, so take it as the actual current state:
-
-    // if the button state has changed:
     if (reading != buttonState) {
       buttonState = reading;
-
-      // only toggle the LED if the new button state is HIGH
       if (buttonState == HIGH) {
         buttonPressed = 1;
       }
     }
   }
-
-  // save the reading.  Next time through the loop,
-  // it'll be the lastButtonState:
   lastButtonState = reading;
-
   return buttonPressed;
 }
 
@@ -148,16 +89,16 @@ void set_pleb_led() {
 }
 
 // When button is pressed, handle it
-void handleButtonPress() {
-    blueLedState = !blueLedState;
-    greenLedState = !greenLedState;
-    redLedState = !redLedState;
-
-    // set the LED:
-    digitalWrite(BLUE_LED_PIN, blueLedState);
-    digitalWrite(GREEN_LED_PIN, greenLedState);
-    digitalWrite(RED_LED_PIN, redLedState);
-}
+//void handleButtonPress() {
+//    blueLedState = !blueLedState;
+//    greenLedState = !greenLedState;
+//    redLedState = !redLedState;
+//
+//    // set the LED:
+//    digitalWrite(BLUE_LED_PIN, blueLedState);
+//    digitalWrite(GREEN_LED_PIN, greenLedState);
+//    digitalWrite(RED_LED_PIN, redLedState);
+//}
 
 //----------------------------------------------------------
 //                    XBee Functions
@@ -313,15 +254,11 @@ void setup() {
   xbeeSerial.begin(9600);
   xbee.setSerial(xbeeSerial);
   Serial.println("Initializing beacon...");
-  
-  // Get my unique ID
-  int ID = getUniqueID();
 
   // Initialize digital pins
   initializePins();
  
   Serial.begin(9600);
-  Serial.println(ID, HEX);
   myID = get_my_id(myIdRequest);
 }
 
@@ -330,7 +267,7 @@ void loop() {
   int was_pressed = checkButtonPress();
   
   if(was_pressed) {
-    handleButtonPress();
+    //handleButtonPress();
   }
   int result = sendATCommand(atRequest);
 
