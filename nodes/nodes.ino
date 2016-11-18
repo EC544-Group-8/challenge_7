@@ -32,10 +32,11 @@ int delay_counter = DELAY_COUNTER_MAX;
 
 // Xbee Declarations
 AtCommandResponse atResponse = AtCommandResponse();
+ZBRxResponse rx = ZBRxResponse();
 uint8_t discoveryCommand[] = {'N','D'};
 uint8_t myIdCommand[] = {'M', 'Y'};
-uint8_t payload[] = {0};
-Tx16Request zbTx = Tx16Request(0xFFFF, payload, sizeof(payload));
+uint8_t payload[] = {0, 0};
+ZBTxRequest zbTx = ZBTxRequest(0xFFFF, payload, sizeof(payload));
 AtCommandRequest atRequest = AtCommandRequest(discoveryCommand);
 AtCommandRequest myIdRequest = AtCommandRequest(myIdCommand);
 
@@ -145,6 +146,8 @@ void handleButtonPress() {
 int check_for_messages(int wait_time, int index){
   int value = 0;
   if(xbee.readPacket(wait_time)) {  
+    Serial.println("parsing received w API id: ");
+    Serial.println(xbee.getResponse().getApiId());
     if (xbee.getResponse().getApiId() == AT_COMMAND_RESPONSE) {
       xbee.getResponse().getAtCommandResponse(atResponse);
   
@@ -169,7 +172,15 @@ int check_for_messages(int wait_time, int index){
           Serial.println(value);
         }
       }
+    } else if (xbee.getResponse().getApiId() == ZB_RX_RESPONSE) {
+      xbee.getResponse().getZBRxResponse(rx);
+      Serial.println("GOT RX RESPONSE");
+      Serial.println(rx.getData(0));
+    } else {
+      Serial.println("UNKNOWN RESPONSE");
+      Serial.println(xbee.getResponse().getApiId());
     }
+    
   }
   return value;
 }
@@ -293,16 +304,16 @@ void loop() {
   }
   
   // Check if its time to scan the network again (periodic checkup)
-  if ((millis() - lastDiscoveryTime) > discoveryDelay) {
-    delay_counter = -1; // Force into the delay_counter loop
-    discovery_timeout = DISCOVERY_ROUNDS;
-    old_connected_nodes = connected_nodes;  // save in case we need it
-    connected_nodes.clear();                // This will let us remove any dropped nodes
-    add_node(myId);
-    
-    // Update state
-    state = DISCOVERY;
-  }
+//  if ((millis() - lastDiscoveryTime) > discoveryDelay) {
+//    delay_counter = -1; // Force into the delay_counter loop
+//    discovery_timeout = DISCOVERY_ROUNDS;
+//    old_connected_nodes = connected_nodes;  // save in case we need it
+//    connected_nodes.clear();                // This will let us remove any dropped nodes
+//    add_node(myId);
+//    
+//    // Update state
+//    state = DISCOVERY;
+//  }
 
    // Infected nodes need to send infect message every 2 seconds
   if (my_role == FOLLOWER_INFECTED && (millis() - lastInfectTime) > infectDelay) {
