@@ -17,8 +17,17 @@
 // discovery parameters
 #define DISCOVERY_ROUNDS 3
 
+// states
+#define DISCOVERY 0
+#define LISTEN_FOR_MESSAGES 1
+
+#define DELAY_COUNTER_MAX 10000
+
 int old_role = -1;            // To keep track of infections
 int my_role = FOLLOWER_CLEAR; // Start as non-infected follower
+
+int state = 0;
+int delay_counter = DELAY_COUNTER_MAX;
 
 
 // Xbee Declarations
@@ -33,8 +42,9 @@ XBee xbee = XBee();
 SoftwareSerial xbeeSerial(2,3);
 int buttonState = HIGH;       // current reading from input pin
 int lastButtonState = HIGH;   // the previous reading from input pin
-int myID;
+int myId;
 std::vector<int> connected_nodes; // For storing the IDs
+std::vector<int> old_connected_nodes; // For storing the IDs from previous discovery
 int discovery_timeout = DISCOVERY_ROUNDS;
 
 // to measure time in ms
@@ -44,13 +54,13 @@ unsigned long debounceDelay = 2;    // the debounce time; increase if the output
 unsigned long lastDiscoveryTime = 0;
 unsigned long discoveryDelay = 10000;
 
-void insertID(int id) {
+void add_node(int id) {
     // If not already connected
     Serial.print("ID is:");
     Serial.println(id);
     
     if (std::find(connected_nodes.begin(), connected_nodes.end(), id) == connected_nodes.end()) {
-        Serial.println("pusing to vector");
+        Serial.println("pushing to vector");
         connected_nodes.push_back(id);
     }
     return;
@@ -93,19 +103,6 @@ int checkButtonPress(){
   return buttonPressed;
 }
 
-// When button is pressed, handle it
-void handleButtonPress() {
-  if(my_role == LEADER){
-      Serial.println("Initiate Clear message");
-      // The leader sends 1 CLEAR message
-      // TODO! broadcast(CLEAR); 
-
-  } else {
-      // For any other my_role, you are now infected
-      my_role = FOLLOWER_INFECTED;
-  }
-}
-
 // The current my_role determines the LEDs to display
 void output_to_leds(int my_role){
   int leds[3] = {BLUE_LED_PIN, GREEN_LED_PIN, RED_LED_PIN};
@@ -119,78 +116,74 @@ void output_to_leds(int my_role){
       digitalWrite(leds[i], led_outputs[my_role][i]);
   }
 }
-    
+
+// When button is pressed, handle it
+void handleButtonPress() {
+  if(my_role == LEADER){
+      Serial.println("Initiate Clear message");
+      // The leader sends 1 CLEAR message
+      // TODO! broadcast(CLEAR); 
+
+  } else {
+      // For any other my_role, you are now infected
+      Serial.println("button infected");
+      my_role = FOLLOWER_INFECTED;
+  }
+}
+ 
 
 //----------------------------------------------------------
 //                    XBee Functions
 //-----------------------------------------------------------
-int sendATCommand(AtCommandRequest atRequest) {
-  int counter = 0;
-  int value = -1;
-  
-  Serial.println("Sending command to the XBee");
-  // send the command
-  xbee.send(atRequest);
 
-  // Let it run this loop 5 times (= 5 seconds)  
-  while (counter++ < 5) {
-    // wait up to 1 second for the status response
-    if (xbee.readPacket(1000)) {  
-      if (xbee.getResponse().getApiId() == AT_COMMAND_RESPONSE) {
-        xbee.getResponse().getAtCommandResponse(atResponse);
+int check_for_messages(int wait_time, int index){
+  int value = 0;
+  if(xbee.readPacket(wait_time)) {  
+    if (xbee.getResponse().getApiId() == AT_COMMAND_RESPONSE) {
+      xbee.getResponse().getAtCommandResponse(atResponse);
   
-        if (atResponse.isOk()) {
-          if (atResponse.getValueLength() > 0) {
-            // Store the ID in the vector if it isn't already there
-            
-            insertID(atResponse.getValue()[11]); // this is the ID
-
-          }
+      if (atResponse.isOk()) {
+        if (atResponse.getValueLength() > 0) {
+          value = atResponse.getValue()[index]; // this is the value we are looking for
+          Serial.println(value);
         }
       }
     }
   }
-
   return value;
 }
 
+
+int send_a_message(int message_id){
+  //  TODO! should be in format similar to how check_for_messages receives messages...
+  return 0;
+}
+
+
 // Get Node ID on Power On
 int get_my_id(AtCommandRequest atRequest) {
-  int counter = 0;
-  int value = -1;
+  int value = 0;
   Serial.println("Sending my command to the XBee");
-
   // send the command
   xbee.send(atRequest);
-
-    // wait up to 3 seconds for the status response
-    if (xbee.readPacket(3000)) {
-      // got a response!
-  
-      // should be an AT command response
-      if (xbee.getResponse().getApiId() == AT_COMMAND_RESPONSE) {
-        xbee.getResponse().getAtCommandResponse(atResponse);
-  
-        if (atResponse.isOk()) {
-          if (atResponse.getValueLength() > 0) {
-            insertID(atResponse.getValue()[1]); // this is the ID
-            value = atResponse.getValue()[1];
-          }
-        } 
-      } 
-    } 
+ 
+  // wait up to 1 second for the status response
+  value = check_for_messages(1000, 1);
+  if(value != 0){
+    add_node(value); // this is the ID    
+  }
   return value;
 }
 
 // After discover, set the node's role
 void decide_role(std::vector<int> connected_nodes) {
   Serial.println("DECIDE ROLES");
-  Serial.println(myID);
+  Serial.println(myId);
   Serial.println(*std::max_element(connected_nodes.begin(), connected_nodes.end()));
   if (connected_nodes.size() == 1) {
     my_role = LEADER;
 
-  } else if (myID == *std::max_element(connected_nodes.begin(), connected_nodes.end())) {
+  } else if (myId == *std::max_element(connected_nodes.begin(), connected_nodes.end())) {
     my_role = LEADER;
 
   } else {
@@ -202,11 +195,22 @@ void decide_role(std::vector<int> connected_nodes) {
 }
 
 int runDiscovery() {
+    int discovery_counter = 0;
+    int value = 0;
     int size_before = connected_nodes.size();
     Serial.print("Size before:");
     Serial.println(size_before);
-  
-    int result = sendATCommand(atRequest);
+    Serial.println("Sending command to the XBee");
+    xbee.send(atRequest);
+
+    // Let it run this loop 5 times (= 5 seconds)  
+    while (discovery_counter++ < 5) {
+      // wait up to 1 second for the status response
+      value = check_for_messages(1000, 11);
+      if(value != 0){
+        add_node(value); // this is the ID    
+      }
+    }
 
     int size_after = connected_nodes.size();
     Serial.print("Size after:");
@@ -231,8 +235,10 @@ int runDiscovery() {
     lastDiscoveryTime = millis();
     Serial.println();
     if(discovery_timeout == 0){
-       // We now have enough info to decide roles 
+       // We now have enough consistent info to decide roles 
        decide_role(connected_nodes);
+       // Switch to listening state
+       state = LISTEN_FOR_MESSAGES;
     }
 }
 
@@ -247,31 +253,54 @@ void setup() {
 
   // Get my ID  
   Serial.begin(9600);
-  myID = get_my_id(myIdRequest);
+  myId = get_my_id(myIdRequest);
 }
 
 void loop() {
-  // Only update LEDs if the role has changed
-  if(my_role != old_role) {
-    output_to_leds(my_role);
-    old_role = my_role; 
-  }
-  
   // Check if button pressed
   int was_pressed = checkButtonPress();
   if (was_pressed) {
     handleButtonPress();
   }
 
-  // Check if its time to scan the network again
+  // Only update LEDs if the role has changed
+  if(my_role != old_role) {
+    output_to_leds(my_role);
+    old_role = my_role; 
+  }
+  
+  // Check if its time to scan the network again (periodic checkup)
   if ((millis() - lastDiscoveryTime) > discoveryDelay) {
+    delay_counter = -1; // Force into the delay_counter loop
     discovery_timeout = DISCOVERY_ROUNDS;
+    old_connected_nodes = connected_nodes;  // save in case we need it
+    connected_nodes.clear();                // This will let us remove any dropped nodes
+    add_node(myId);
+    
+    // Update state
+    state = DISCOVERY;
   }
+    
+  // Instead of delays in the messages, use counter
+  if(delay_counter-- < 0) {
+    int value;
+        
+    if (state == DISCOVERY) {
+      // If we are in a discovery state
+      runDiscovery();
+      
+    } else if (state == LISTEN_FOR_MESSAGES) {
+      Serial.println("check for LISTEN_FOR_MESSAGES");
+      value = check_for_messages(1, 8); // "8" is just a temp placeholder for the value we want to grab from the packet
+      if(value != 0){
+        Serial.println("GOT A MESSAGE"); // Need a convention for sending and receiving these types of messages    
+        Serial.println(value); // this is the messageID, need to do something with it   
+      }
+      
+    }
 
-  // If we are in a discovery state
-  if (discovery_timeout > 0) {
-    runDiscovery();
+    
+    // Reset the delay counter
+    delay_counter = DELAY_COUNTER_MAX;
   }
-  
-  
 }
