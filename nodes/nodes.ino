@@ -33,7 +33,7 @@ int delay_counter = DELAY_COUNTER_MAX;
 // Xbee Declarations
 AtCommandResponse atResponse = AtCommandResponse();
 uint8_t discoveryCommand[] = {'N','D'};
-uint8_t myIdCommand[] = {'N', 'I'};
+uint8_t myIdCommand[] = {'M', 'Y'};
 AtCommandRequest atRequest = AtCommandRequest(discoveryCommand);
 AtCommandRequest myIdRequest = AtCommandRequest(myIdCommand);
 
@@ -52,7 +52,7 @@ unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 unsigned long debounceDelay = 2;    // the debounce time; increase if the output flickers
 
 unsigned long lastDiscoveryTime = 0;
-unsigned long discoveryDelay = 10000;
+unsigned long discoveryDelay = 5000;
 
 void add_node(int id) {
     // If not already connected
@@ -145,6 +145,8 @@ int check_for_messages(int wait_time, int index){
       if (atResponse.isOk()) {
         if (atResponse.getValueLength() > 0) {
           value = atResponse.getValue()[index]; // this is the value we are looking for
+          value << 8;
+          value += atResponse.getValue()[index + 1]; // get the next byte of the address as well.
           Serial.println(value);
         }
       }
@@ -168,7 +170,8 @@ int get_my_id(AtCommandRequest atRequest) {
   xbee.send(atRequest);
  
   // wait up to 1 second for the status response
-  value = check_for_messages(1000, 1);
+  // This needs to be changed to address
+  value = check_for_messages(400, 0);
   if(value != 0){
     add_node(value); // this is the ID    
   }
@@ -206,7 +209,7 @@ int runDiscovery() {
     // Let it run this loop 5 times (= 5 seconds)  
     while (discovery_counter++ < 5) {
       // wait up to 1 second for the status response
-      value = check_for_messages(1000, 11);
+      value = check_for_messages(400, 0);
       if(value != 0){
         add_node(value); // this is the ID    
       }
