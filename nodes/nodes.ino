@@ -24,6 +24,7 @@ int buttonState;             // current reading from input pin
 int lastButtonState = LOW;   // the previous reading from input pin
 int myID;
 std::vector<int> connected_nodes; // For storing the IDs
+int discovery_timeout = 3;
 
 // to measure time in ms
 unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
@@ -106,76 +107,54 @@ void set_pleb_led() {
 int sendATCommand(AtCommandRequest atRequest) {
   int counter = 0;
   int value = -1;
-  Serial.println("Sending command to the XBee");
+  int size_before = connected_nodes.size();
+  Serial.print("Size before:");
+  Serial.println(size_before);
+  
+  if (discovery_timeout > 0) {
+    Serial.println("Sending command to the XBee");
+  
+    // send the command
+    xbee.send(atRequest);
+  
+    // Let it run this loop 5 times (= 5 seconds)  
+    while (counter++ < 5) {
+      // wait up to 1 second for the status response
+      if (xbee.readPacket(1000)) {  
+        if (xbee.getResponse().getApiId() == AT_COMMAND_RESPONSE) {
+          xbee.getResponse().getAtCommandResponse(atResponse);
+    
+          if (atResponse.isOk()) {
+            if (atResponse.getValueLength() > 0) {
+              // Store the ID in the vector if it isn't already there
+              
+              insertID(atResponse.getValue()[11]); // this is the ID
 
-  // send the command
-  xbee.send(atRequest);
-
-  // Let it run this loop 5 times (=15 seconds)  
-  while (counter++ < 5) {
-    // wait up to 3 seconds for the status response
-    if (xbee.readPacket(1000)) {
-      // got a response!
-  
-      // should be an AT command response
-      if (xbee.getResponse().getApiId() == AT_COMMAND_RESPONSE) {
-        xbee.getResponse().getAtCommandResponse(atResponse);
-  
-        if (atResponse.isOk()) {
-          //Serial.print("Command [");
-          //Serial.print(atResponse.getCommand()[0]);
-          //Serial.print(atResponse.getCommand()[1]);
-          //Serial.println("] was successful!");
-  
-          if (atResponse.getValueLength() > 0) {
-            //Serial.print("Command value length is ");
-            //Serial.println(atResponse.getValueLength(), DEC);
-  
-            
-            
-            // Store the ID in the vector if it isn't already there
-            Serial.println("Adding value");
-            insertID(atResponse.getValue()[11]); // this is the ID
-
-            // Print out all the values (Debugging)
-             Serial.print("Command value: ");
-             for (int i = 0; i < atResponse.getValueLength(); i++) { 
-               value = atResponse.getValue()[i]; 
-               Serial.print(atResponse.getValue()[i]); 
-               Serial.print(" "); 
-             } 
-  
-            Serial.println("");
+              
+            }
           }
-        } 
-        else {
-          Serial.print("Command return error code: ");
-          Serial.println(atResponse.getStatus(), HEX);
         }
-      } else {
-        Serial.print("Expected AT response but got ");
-        Serial.print(xbee.getResponse().getApiId(), HEX);
-      }   
-    } else {
-      // at command failed
-      if (xbee.getResponse().isError()) {
-        Serial.print("Error reading packet.  Error code: ");  
-        Serial.println(xbee.getResponse().getErrorCode());
-      } 
-      else {
-        Serial.print("No response from radio"); 
-        Serial.print(counter); 
       }
     }
   }
-  
+  int size_after = connected_nodes.size();
+  Serial.print("Size after:");
+  Serial.println(size_after);
+  Serial.print("disc timeout:");
+  Serial.println(discovery_timeout);
+  // If the size has changed, reset the counter
+  if (size_after - size_before > 0) {
+    discovery_timeout = 3;
+  } else {
+    discovery_timeout--;
+  }
   return value;
 }
 
 int get_my_id(AtCommandRequest atRequest) {
   int counter = 0;
   int value = -1;
-  Serial.println("Sending command to the XBee");
+  Serial.println("Sending my command to the XBee");
 
   // send the command
   xbee.send(atRequest);
@@ -189,57 +168,19 @@ int get_my_id(AtCommandRequest atRequest) {
         xbee.getResponse().getAtCommandResponse(atResponse);
   
         if (atResponse.isOk()) {
-          //Serial.print("Command [");
-          //Serial.print(atResponse.getCommand()[0]);
-          //Serial.print(atResponse.getCommand()[1]);
-          //Serial.println("] was successful!");
-  
           if (atResponse.getValueLength() > 0) {
-            //Serial.print("Command value length is ");
-            //Serial.println(atResponse.getValueLength(), DEC);
-  
-            
-            
-            // Store the ID in the vector if it isn't already there
-            Serial.println("Adding MY value");
             insertID(atResponse.getValue()[1]); // this is the ID
-
-            // Print out all the values (Debugging)
-             Serial.print("Command value: ");
-             for (int i = 0; i < atResponse.getValueLength(); i++) { 
-               value = atResponse.getValue()[i]; 
-               Serial.print(atResponse.getValue()[i]); 
-               Serial.print(" "); 
-             } 
-  
-            Serial.println("");
           }
         } 
-        else {
-          Serial.print("Command return error code: ");
-          Serial.println(atResponse.getStatus(), HEX);
-        }
-      } else {
-        Serial.print("Expected AT response but got ");
-        Serial.print(xbee.getResponse().getApiId(), HEX);
-      }   
-    } else {
-      // at command failed
-      if (xbee.getResponse().isError()) {
-        Serial.print("Error reading packet.  Error code: ");  
-        Serial.println(xbee.getResponse().getErrorCode());
       } 
-      else {
-        Serial.print("No response from radio"); 
-        Serial.print(counter); 
-      }
-  }
-  
+    } 
   return value;
 }
 
 void decide_role(std::vector<int> connected_nodes) {
-  if (myID == *std::max_element(connected_nodes.begin(), connected_nodes.end())) {
+  if (connected_nodes.size() == 1) {
+    set_leader_led();
+  } else if (myID == *std::max_element(connected_nodes.begin(), connected_nodes.end())) {
     // Leader LED
     set_leader_led();
   } else {
@@ -263,13 +204,16 @@ void setup() {
 }
 
 void loop() {
+  decide_role(connected_nodes);
+
   // ----------Button Handling---------- //  
   int was_pressed = checkButtonPress();
   
   if(was_pressed) {
     //handleButtonPress();
   }
-  int result = sendATCommand(atRequest);
+  if (discovery_timeout > 0)
+    int result = sendATCommand(atRequest);
 
   // Print the values in our vector
   Serial.print("Num of connected_nodes is: ");
