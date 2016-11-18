@@ -9,9 +9,16 @@
 #define RED_LED_PIN 7
 #define BUTTON_PIN 8
 
+// roles
+#define FOLLOWER_CLEAR 0
+#define LEADER 1
+#define FOLLOWER_INFECTED 2
+
+int old_role = -1;            // To keep track of infections
+int my_role = FOLLOWER_CLEAR; // Start as non-infected follower
+
 // Xbee Declarations
 AtCommandResponse atResponse = AtCommandResponse();
-uint8_t dbCommand[] = {'D','B'};
 uint8_t discoveryCommand[] = {'N','D'};
 uint8_t myIdCommand[] = {'N', 'I'};
 AtCommandRequest atRequest = AtCommandRequest(discoveryCommand);
@@ -20,8 +27,8 @@ AtCommandRequest myIdRequest = AtCommandRequest(myIdCommand);
 // Arduino Declarations
 XBee xbee = XBee();
 SoftwareSerial xbeeSerial(2,3);
-int buttonState;             // current reading from input pin
-int lastButtonState = LOW;   // the previous reading from input pin
+int buttonState = HIGH;       // current reading from input pin
+int lastButtonState = HIGH;   // the previous reading from input pin
 int myID;
 std::vector<int> connected_nodes; // For storing the IDs
 
@@ -52,9 +59,9 @@ void initializePins() {
   pinMode(BUTTON_PIN, INPUT);
   
   // set initial LED state
-  digitalWrite(BLUE_LED_PIN,  LOW);
-  digitalWrite(GREEN_LED_PIN, LOW);
-  digitalWrite(RED_LED_PIN,   LOW);
+  digitalWrite(BLUE_LED_PIN,  HIGH);
+  digitalWrite(GREEN_LED_PIN, HIGH);
+  digitalWrite(RED_LED_PIN,   HIGH);
 
 }
 
@@ -78,27 +85,33 @@ int checkButtonPress(){
   return buttonPressed;
 }
 
-void set_leader_led() {
-    digitalWrite(BLUE_LED_PIN, HIGH);
-    return;
-}
-
-void set_pleb_led() {
-    digitalWrite(BLUE_LED_PIN, LOW);
-    return;
-}
-
 // When button is pressed, handle it
-//void handleButtonPress() {
-//    blueLedState = !blueLedState;
-//    greenLedState = !greenLedState;
-//    redLedState = !redLedState;
-//
-//    // set the LED:
-//    digitalWrite(BLUE_LED_PIN, blueLedState);
-//    digitalWrite(GREEN_LED_PIN, greenLedState);
-//    digitalWrite(RED_LED_PIN, redLedState);
-//}
+void handleButtonPress() {
+  if(my_role == LEADER){
+      Serial.println("Initiate Clear message");
+      // The leader sends 1 CLEAR message
+      // TODO! broadcast(CLEAR); 
+
+  } else {
+      // For any other my_role, you are now infected
+      my_role = FOLLOWER_INFECTED;
+  }
+}
+
+// The current my_role determines the LEDs to display
+void output_to_leds(int my_role){
+  int leds[3] = {BLUE_LED_PIN, GREEN_LED_PIN, RED_LED_PIN};
+  int led_outputs[3][3] = {
+    {0,1,0},   // FOLLOWER_CLEAR
+    {1,1,0},   // LEADER
+    {0,0,1}    // FOLLOWER_INFECTED
+  };
+  
+  for (int i = 0; i <= 2; i++) {
+      digitalWrite(leds[i], led_outputs[my_role][i]);
+  }
+}
+    
 
 //----------------------------------------------------------
 //                    XBee Functions
@@ -241,15 +254,16 @@ int get_my_id(AtCommandRequest atRequest) {
 void decide_role(std::vector<int> connected_nodes) {
   if (myID == *std::max_element(connected_nodes.begin(), connected_nodes.end())) {
     // Leader LED
-    set_leader_led();
+    my_role = LEADER;
   } else {
-    // Non-leader LED
-    set_pleb_led();
+    // Non-leader, only update if not infected
+    if(old_role != FOLLOWER_INFECTED){
+      my_role = FOLLOWER_CLEAR;  
+    }
   }
 }
 
 void setup() {
-  
   // start serial
   xbeeSerial.begin(9600);
   xbee.setSerial(xbeeSerial);
@@ -257,29 +271,37 @@ void setup() {
 
   // Initialize digital pins
   initializePins();
- 
+
+  // Get my ID  
   Serial.begin(9600);
   myID = get_my_id(myIdRequest);
 }
 
 void loop() {
-  // ----------Button Handling---------- //  
-  int was_pressed = checkButtonPress();
   
+  // Only update LEDs if the role has changed
+  if(my_role != old_role) {
+    output_to_leds(my_role);
+    old_role = my_role; 
+  }
+  
+  // Check if button pressed
+  int was_pressed = checkButtonPress();
   if(was_pressed) {
-    //handleButtonPress();
+    handleButtonPress();
   }
-  int result = sendATCommand(atRequest);
-
-  // Print the values in our vector
-  Serial.print("Num of connected_nodes is: ");
-  Serial.println(connected_nodes.size());
-  for (int i = 0; i < connected_nodes.size(); i++) {
-    Serial.print(connected_nodes[i]);
-    Serial.print(" ");
-  }
-  decide_role(connected_nodes);
-  Serial.println();
-  delay(5000);
+  
+//  int result = sendATCommand(atRequest);
+//
+//  // Print the values in our vector
+//  Serial.print("Num of connected_nodes is: ");
+//  Serial.println(connected_nodes.size());
+//  for (int i = 0; i < connected_nodes.size(); i++) {
+//    Serial.print(connected_nodes[i]);
+//    Serial.print(" ");
+//  }
+//  decide_role(connected_nodes);
+//  Serial.println();
+//  delay(5000);
   
 }
