@@ -35,8 +35,12 @@ AtCommandResponse atResponse = AtCommandResponse();
 ZBRxResponse rx = ZBRxResponse();
 uint8_t discoveryCommand[] = {'N','D'};
 uint8_t myIdCommand[] = {'M', 'Y'};
-uint8_t payload[] = {0, 0};
-ZBTxRequest zbTx = ZBTxRequest(0xFFFF, payload, sizeof(payload));
+uint8_t infectPayload[] = {1, 1};
+uint8_t clearPayload[] = {0, 0};
+uint8_t leaderPayload[] = {2, 2};
+ZBTxRequest infectTx = ZBTxRequest(0xFFFF, infectPayload, sizeof(infectPayload));
+ZBTxRequest clearTx = ZBTxRequest(0xFFFF, clearPayload, sizeof(clearPayload));
+ZBTxRequest leaderTx = ZBTxRequest(0xFFFF, leaderPayload, sizeof(leaderPayload));
 AtCommandRequest atRequest = AtCommandRequest(discoveryCommand);
 AtCommandRequest myIdRequest = AtCommandRequest(myIdCommand);
 
@@ -125,10 +129,11 @@ void output_to_leds(int my_role){
 
 // When button is pressed, handle it
 void handleButtonPress() {
+  Serial.println("Handle Button press");
   if(my_role == LEADER){
       Serial.println("Initiate Clear message");
       // The leader sends 1 CLEAR message
-      xbee.send(zbTx);
+      xbee.send(clearTx);
 
   } else {
       // For any other my_role, you are now infected
@@ -318,7 +323,7 @@ void loop() {
    // Infected nodes need to send infect message every 2 seconds
   if (my_role == FOLLOWER_INFECTED && (millis() - lastInfectTime) > infectDelay) {
     Serial.println("Sending infect message");
-    xbee.send(zbTx);
+    xbee.send(infectTx);
 
     // Reset last infect time
     lastInfectTime = millis();
@@ -334,7 +339,7 @@ void loop() {
       
     } else if (state == LISTEN_FOR_MESSAGES) {
       Serial.println(".");
-      value = check_for_messages(1, 8); // "8" is just a temp placeholder for the value we want to grab from the packet
+      value = check_for_messages(1, 1); // "8" is just a temp placeholder for the value we want to grab from the packet
       if(value != 0){
         Serial.println("GOT A MESSAGE"); // Need a convention for sending and receiving these types of messages    
         Serial.println(value); // this is the messageID, need to do something with it   
