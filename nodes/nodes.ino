@@ -54,6 +54,9 @@ unsigned long debounceDelay = 2;    // the debounce time; increase if the output
 unsigned long lastDiscoveryTime = 0;
 unsigned long discoveryDelay = 5000;
 
+unsigned long lastInfectTime = 0;
+unsigned long infectDelay = 2000; //2 seconds
+
 void add_node(int id) {
     // If not already connected
     Serial.print("ID is:");
@@ -122,12 +125,13 @@ void handleButtonPress() {
   if(my_role == LEADER){
       Serial.println("Initiate Clear message");
       // The leader sends 1 CLEAR message
-      // TODO! broadcast(CLEAR); 
+      // xbee.send(CLEAR); // TODO!!
 
   } else {
       // For any other my_role, you are now infected
       Serial.println("button infected");
       my_role = FOLLOWER_INFECTED;
+      lastInfectTime = millis();
   }
 }
  
@@ -163,11 +167,11 @@ int send_a_message(int message_id){
 
 
 // Get Node ID on Power On
-int get_my_id(AtCommandRequest atRequest) {
+int get_my_id() {
   int value = 0;
   Serial.println("Sending my command to the XBee");
   // send the command
-  xbee.send(atRequest);
+  xbee.send(myIdRequest);
  
   // wait up to 1 second for the status response
   // This needs to be changed to address
@@ -241,6 +245,7 @@ int runDiscovery() {
        // We now have enough consistent info to decide roles 
        decide_role(connected_nodes);
        // Switch to listening state
+       Serial.println("Listen for messages state...");
        state = LISTEN_FOR_MESSAGES;
     }
 }
@@ -256,7 +261,7 @@ void setup() {
 
   // Get my ID  
   Serial.begin(9600);
-  myId = get_my_id(myIdRequest);
+  myId = get_my_id();
 }
 
 void loop() {
@@ -282,6 +287,14 @@ void loop() {
     
     // Update state
     state = DISCOVERY;
+  }
+
+   // Infected nodes need to send infect message every 2 seconds
+  if (my_role == FOLLOWER_INFECTED && (millis() - lastInfectTime) > infectDelay) {
+    // xbee.send(infectRequest); //TODO!!
+
+    // Reset last infect time
+    lastInfectTime = millis();
   }
     
   // Instead of delays in the messages, use counter
