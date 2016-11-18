@@ -34,6 +34,8 @@ int delay_counter = DELAY_COUNTER_MAX;
 AtCommandResponse atResponse = AtCommandResponse();
 uint8_t discoveryCommand[] = {'N','D'};
 uint8_t myIdCommand[] = {'M', 'Y'};
+uint8_t payload[] = {0};
+Tx16Request zbTx = Tx16Request(0xFFFF, payload, sizeof(payload));
 AtCommandRequest atRequest = AtCommandRequest(discoveryCommand);
 AtCommandRequest myIdRequest = AtCommandRequest(myIdCommand);
 
@@ -125,7 +127,7 @@ void handleButtonPress() {
   if(my_role == LEADER){
       Serial.println("Initiate Clear message");
       // The leader sends 1 CLEAR message
-      // xbee.send(CLEAR); // TODO!!
+      xbee.send(zbTx);
 
   } else {
       // For any other my_role, you are now infected
@@ -148,6 +150,19 @@ int check_for_messages(int wait_time, int index){
   
       if (atResponse.isOk()) {
         if (atResponse.getValueLength() > 0) {
+          Serial.print("Command value length is ");
+          Serial.println(atResponse.getValueLength(), DEC);
+
+          Serial.print("Command value: ");
+          
+          for (int i = 0; i < atResponse.getValueLength(); i++) {
+            value = atResponse.getValue()[i];
+            Serial.print(atResponse.getValue()[i]);
+            Serial.print(" ");
+          }
+
+          Serial.println("");
+            
           value = atResponse.getValue()[index]; // this is the value we are looking for
           value << 8;
           value += atResponse.getValue()[index + 1]; // get the next byte of the address as well.
@@ -291,7 +306,8 @@ void loop() {
 
    // Infected nodes need to send infect message every 2 seconds
   if (my_role == FOLLOWER_INFECTED && (millis() - lastInfectTime) > infectDelay) {
-    // xbee.send(infectRequest); //TODO!!
+    Serial.println("Sending infect message");
+    xbee.send(zbTx);
 
     // Reset last infect time
     lastInfectTime = millis();
@@ -306,7 +322,7 @@ void loop() {
       runDiscovery();
       
     } else if (state == LISTEN_FOR_MESSAGES) {
-      Serial.println("check for LISTEN_FOR_MESSAGES");
+      Serial.println(".");
       value = check_for_messages(1, 8); // "8" is just a temp placeholder for the value we want to grab from the packet
       if(value != 0){
         Serial.println("GOT A MESSAGE"); // Need a convention for sending and receiving these types of messages    
