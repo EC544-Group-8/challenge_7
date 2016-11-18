@@ -59,7 +59,7 @@ unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 unsigned long debounceDelay = 2;    // the debounce time; increase if the output flickers
 
 unsigned long lastDiscoveryTime = 0;
-unsigned long discoveryDelay = 5000;
+unsigned long discoveryDelay = 10000;
 
 unsigned long lastInfectTime = 0;
 unsigned long infectDelay = 2000; //2 seconds
@@ -293,17 +293,17 @@ void loop() {
     old_role = my_role; 
   }
   
-  // Check if its time to scan the network again (periodic checkup)
-  if ((millis() - lastDiscoveryTime) > discoveryDelay) {
-    delay_counter = -1; // Force into the delay_counter loop
-    discovery_timeout = DISCOVERY_ROUNDS;
-    old_connected_nodes = connected_nodes;  // save in case we need it
-    connected_nodes.clear();                // This will let us remove any dropped nodes
-    add_node(myId);
-    
-    // Update state
-    state = DISCOVERY;
-  }
+//  // Check if its time to scan the network again (periodic checkup)
+//  if ((millis() - lastDiscoveryTime) > discoveryDelay) {
+//    delay_counter = -1; // Force into the delay_counter loop
+//    discovery_timeout = DISCOVERY_ROUNDS;
+//    old_connected_nodes = connected_nodes;  // save in case we need it
+//    connected_nodes.clear();                // This will let us remove any dropped nodes
+//    add_node(myId);
+//    
+//    // Update state
+//    state = DISCOVERY;
+//  }
 
    // Infected nodes need to send infect message every 2 seconds
   if (my_role == FOLLOWER_INFECTED && (millis() - lastInfectTime) > infectDelay) {
@@ -345,7 +345,7 @@ void loop() {
             my_role = FOLLOWER_CLEAR; 
           }  
         } else if (value == 3) { // LEADER IS ALIVE
-          lastDiscoveryTime = millis(); // reset to current time
+          lastDiscoveryTime = millis(); // reset the time we are waiting to initiate Discovery again 
         }
         Serial.println("GOT A MESSAGE"); // Need a convention for sending and receiving these types of messages    
         Serial.println(value); // this is the messageID, need to do something with it   
