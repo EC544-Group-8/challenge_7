@@ -36,8 +36,8 @@ ZBRxResponse rx = ZBRxResponse();
 uint8_t discoveryCommand[] = {'N','D'};
 uint8_t myIdCommand[] = {'M', 'Y'};
 uint8_t infectPayload[] = {1, 1};
-uint8_t clearPayload[] = {0, 0};
-uint8_t leaderPayload[] = {2, 2};
+uint8_t clearPayload[] = {2, 2};
+uint8_t leaderPayload[] = {3, 3};
 ZBTxRequest infectTx = ZBTxRequest(0xFFFF, infectPayload, sizeof(infectPayload));
 ZBTxRequest clearTx = ZBTxRequest(0xFFFF, clearPayload, sizeof(clearPayload));
 ZBTxRequest leaderTx = ZBTxRequest(0xFFFF, leaderPayload, sizeof(leaderPayload));
@@ -63,6 +63,9 @@ unsigned long discoveryDelay = 5000;
 
 unsigned long lastInfectTime = 0;
 unsigned long infectDelay = 2000; //2 seconds
+
+unsigned long lastLeaderTime = 0;
+unsigned long leaderDelay = 1000;
 
 void add_node(int id) {
     // If not already connected
@@ -157,20 +160,7 @@ int check_for_messages(int wait_time, int index){
       xbee.getResponse().getAtCommandResponse(atResponse);
   
       if (atResponse.isOk()) {
-        if (atResponse.getValueLength() > 0) {
-          Serial.print("Command value length is ");
-          Serial.println(atResponse.getValueLength(), DEC);
-
-          Serial.print("Command value: ");
-          
-          for (int i = 0; i < atResponse.getValueLength(); i++) {
-            value = atResponse.getValue()[i];
-            Serial.print(atResponse.getValue()[i]);
-            Serial.print(" ");
-          }
-
-          Serial.println("");
-            
+        if (atResponse.getValueLength() > 0) {           
           value = atResponse.getValue()[index]; // this is the value we are looking for
           value << 8;
           value += atResponse.getValue()[index + 1]; // get the next byte of the address as well.
@@ -181,6 +171,8 @@ int check_for_messages(int wait_time, int index){
       xbee.getResponse().getZBRxResponse(rx);
       Serial.println("GOT RX RESPONSE");
       Serial.println(rx.getData(0));
+      value = rx.getData(0);
+      
     } else {
       Serial.println("UNKNOWN RESPONSE");
       Serial.println(xbee.getResponse().getApiId());
@@ -189,13 +181,6 @@ int check_for_messages(int wait_time, int index){
   }
   return value;
 }
-
-
-int send_a_message(int message_id){
-  //  TODO! should be in format similar to how check_for_messages receives messages...
-  return 0;
-}
-
 
 // Get Node ID on Power On
 int get_my_id() {
@@ -309,16 +294,16 @@ void loop() {
   }
   
   // Check if its time to scan the network again (periodic checkup)
-//  if ((millis() - lastDiscoveryTime) > discoveryDelay) {
-//    delay_counter = -1; // Force into the delay_counter loop
-//    discovery_timeout = DISCOVERY_ROUNDS;
-//    old_connected_nodes = connected_nodes;  // save in case we need it
-//    connected_nodes.clear();                // This will let us remove any dropped nodes
-//    add_node(myId);
-//    
-//    // Update state
-//    state = DISCOVERY;
-//  }
+  if ((millis() - lastDiscoveryTime) > discoveryDelay) {
+    delay_counter = -1; // Force into the delay_counter loop
+    discovery_timeout = DISCOVERY_ROUNDS;
+    old_connected_nodes = connected_nodes;  // save in case we need it
+    connected_nodes.clear();                // This will let us remove any dropped nodes
+    add_node(myId);
+    
+    // Update state
+    state = DISCOVERY;
+  }
 
    // Infected nodes need to send infect message every 2 seconds
   if (my_role == FOLLOWER_INFECTED && (millis() - lastInfectTime) > infectDelay) {
@@ -328,6 +313,16 @@ void loop() {
     // Reset last infect time
     lastInfectTime = millis();
   }
+
+     // Leader node need to send leader message every 1 seconds
+  if (my_role == LEADER && (millis() - lastLeaderTime) > leaderDelay) {
+    Serial.println("Sending leader message");
+    xbee.send(leaderTx);
+
+    // Reset last infect time
+    lastLeaderTime = millis();
+  }
+    
     
   // Instead of delays in the messages, use counter
   if(delay_counter-- < 0) {
@@ -339,8 +334,19 @@ void loop() {
       
     } else if (state == LISTEN_FOR_MESSAGES) {
       Serial.println(".");
-      value = check_for_messages(1, 1); // "8" is just a temp placeholder for the value we want to grab from the packet
+      value = check_for_messages(1, 1); //  is just a temp placeholder for the value we want to grab from the packet
       if(value != 0){
+        if(value == 1) { // INFECT MESSAGE
+          if(my_role != LEADER){
+            my_role = FOLLOWER_INFECTED; 
+          }
+        } else if (value == 2) { // CLEAR MESSAGE
+          if(my_role != LEADER){
+            my_role = FOLLOWER_CLEAR; 
+          }  
+        } else if (value == 3) { // LEADER IS ALIVE
+          lastDiscoveryTime = millis(); // reset to current time
+        }
         Serial.println("GOT A MESSAGE"); // Need a convention for sending and receiving these types of messages    
         Serial.println(value); // this is the messageID, need to do something with it   
       }
