@@ -14,8 +14,12 @@
 #define LEADER 1
 #define FOLLOWER_INFECTED 2
 
+// discovery parameters
+#define DISCOVERY_ROUNDS 3
+
 int old_role = -1;            // To keep track of infections
 int my_role = FOLLOWER_CLEAR; // Start as non-infected follower
+
 
 // Xbee Declarations
 AtCommandResponse atResponse = AtCommandResponse();
@@ -31,11 +35,14 @@ int buttonState = HIGH;       // current reading from input pin
 int lastButtonState = HIGH;   // the previous reading from input pin
 int myID;
 std::vector<int> connected_nodes; // For storing the IDs
-int discovery_timeout = 3;
+int discovery_timeout = DISCOVERY_ROUNDS;
 
 // to measure time in ms
 unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 unsigned long debounceDelay = 2;    // the debounce time; increase if the output flickers
+
+unsigned long lastDiscoveryTime = 0;
+unsigned long discoveryDelay = 10000;
 
 void insertID(int id) {
     // If not already connected
@@ -120,49 +127,34 @@ void output_to_leds(int my_role){
 int sendATCommand(AtCommandRequest atRequest) {
   int counter = 0;
   int value = -1;
-  int size_before = connected_nodes.size();
-  Serial.print("Size before:");
-  Serial.println(size_before);
   
-  if (discovery_timeout > 0) {
-    Serial.println("Sending command to the XBee");
+  Serial.println("Sending command to the XBee");
+  // send the command
+  xbee.send(atRequest);
+
+  // Let it run this loop 5 times (= 5 seconds)  
+  while (counter++ < 5) {
+    // wait up to 1 second for the status response
+    if (xbee.readPacket(1000)) {  
+      if (xbee.getResponse().getApiId() == AT_COMMAND_RESPONSE) {
+        xbee.getResponse().getAtCommandResponse(atResponse);
   
-    // send the command
-    xbee.send(atRequest);
-  
-    // Let it run this loop 5 times (= 5 seconds)  
-    while (counter++ < 5) {
-      // wait up to 1 second for the status response
-      if (xbee.readPacket(1000)) {  
-        if (xbee.getResponse().getApiId() == AT_COMMAND_RESPONSE) {
-          xbee.getResponse().getAtCommandResponse(atResponse);
-    
-          if (atResponse.isOk()) {
-            if (atResponse.getValueLength() > 0) {
-              // Store the ID in the vector if it isn't already there
-              
-              insertID(atResponse.getValue()[11]); // this is the ID
- 
-            }
+        if (atResponse.isOk()) {
+          if (atResponse.getValueLength() > 0) {
+            // Store the ID in the vector if it isn't already there
+            
+            insertID(atResponse.getValue()[11]); // this is the ID
+
           }
         }
       }
     }
   }
-  int size_after = connected_nodes.size();
-  Serial.print("Size after:");
-  Serial.println(size_after);
-  Serial.print("disc timeout:");
-  Serial.println(discovery_timeout);
-  // If the size has changed, reset the counter
-  if (size_after - size_before > 0) {
-    discovery_timeout = 3;
-  } else {
-    discovery_timeout--;
-  }
+
   return value;
 }
 
+// Get Node ID on Power On
 int get_my_id(AtCommandRequest atRequest) {
   int counter = 0;
   int value = -1;
@@ -182,14 +174,19 @@ int get_my_id(AtCommandRequest atRequest) {
         if (atResponse.isOk()) {
           if (atResponse.getValueLength() > 0) {
             insertID(atResponse.getValue()[1]); // this is the ID
+            value = atResponse.getValue()[1];
           }
         } 
       } 
     } 
   return value;
 }
+
 // After discover, set the node's role
 void decide_role(std::vector<int> connected_nodes) {
+  Serial.println("DECIDE ROLES");
+  Serial.println(myID);
+  Serial.println(*std::max_element(connected_nodes.begin(), connected_nodes.end()));
   if (connected_nodes.size() == 1) {
     my_role = LEADER;
 
@@ -202,6 +199,41 @@ void decide_role(std::vector<int> connected_nodes) {
       my_role = FOLLOWER_CLEAR; 
     }
   }
+}
+
+int runDiscovery() {
+    int size_before = connected_nodes.size();
+    Serial.print("Size before:");
+    Serial.println(size_before);
+  
+    int result = sendATCommand(atRequest);
+
+    int size_after = connected_nodes.size();
+    Serial.print("Size after:");
+    Serial.println(size_after);
+    Serial.print("disc timeout:");
+    Serial.println(discovery_timeout);
+    
+    // If the size has changed, reset the counter
+    if (size_after - size_before > 0) {
+      discovery_timeout = DISCOVERY_ROUNDS;
+    } else {
+      discovery_timeout--;
+    }
+  
+    // Print the values in our vector
+    Serial.print("Num of connected_nodes is: ");
+    Serial.println(connected_nodes.size());
+    for (int i = 0; i < connected_nodes.size(); i++) {
+      Serial.print(connected_nodes[i]);
+      Serial.print(" ");
+    }
+    lastDiscoveryTime = millis();
+    Serial.println();
+    if(discovery_timeout == 0){
+       // We now have enough info to decide roles 
+       decide_role(connected_nodes);
+    }
 }
 
 void setup() {
@@ -219,8 +251,6 @@ void setup() {
 }
 
 void loop() {
-  // decide_role(connected_nodes);
-
   // Only update LEDs if the role has changed
   if(my_role != old_role) {
     output_to_leds(my_role);
@@ -233,19 +263,14 @@ void loop() {
     handleButtonPress();
   }
 
+  // Check if its time to scan the network again
+  if ((millis() - lastDiscoveryTime) > discoveryDelay) {
+    discovery_timeout = DISCOVERY_ROUNDS;
+  }
+
   // If we are in a discovery state
   if (discovery_timeout > 0) {
-    int result = sendATCommand(atRequest);
-
-    // Print the values in our vector
-    Serial.print("Num of connected_nodes is: ");
-    Serial.println(connected_nodes.size());
-    for (int i = 0; i < connected_nodes.size(); i++) {
-      Serial.print(connected_nodes[i]);
-      Serial.print(" ");
-    }
-    decide_role(connected_nodes);
-    Serial.println();
+    runDiscovery();
   }
   
   
