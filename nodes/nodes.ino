@@ -53,6 +53,7 @@ int myId;
 std::vector<int> connected_nodes; // For storing the IDs
 std::vector<int> old_connected_nodes; // For storing the IDs from previous discovery
 int discovery_timeout = DISCOVERY_ROUNDS;
+bool discovering = true;
 
 // to measure time in ms
 unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
@@ -65,7 +66,10 @@ unsigned long lastInfectTime = 0;
 unsigned long infectDelay = 2000; //2 seconds
 
 unsigned long lastLeaderTime = 0;
-unsigned long leaderDelay = 1000;
+unsigned long leaderDelay = 10000;
+
+unsigned long lastHeardFromLeaderTime = 0;
+unsigned long hearFromLeaderDelay = 12000;
 
 void add_node(int id) {
     if (id == 1 || id == 2 || id == 3)
@@ -175,6 +179,16 @@ int check_for_messages(int wait_time, int index){
       Serial.print("RX: ");
       Serial.println(rx.getData(0));
       value = rx.getData(0);
+
+      // Receive word from leader in middle of discovery
+      if (discovering && value == 3) {
+        if (old_role == -1)
+          my_role = FOLLOWER_CLEAR; // haven't had a role yet
+        else
+          my_role = old_role;  // resume previous role
+
+        discovering = false;
+      }
       
     } else {
       //Serial.println("UNKNOWN RESPONSE");
@@ -221,58 +235,56 @@ void decide_role(std::vector<int> connected_nodes) {
 }
 
 int runDiscovery() {
-    int discovery_counter = 0;
-    int value = 0;
-    int size_before = connected_nodes.size();
-    //Serial.print("Size before:");
-    //Serial.println(size_before);
-    //Serial.println("Sending command to the XBee");
-    xbee.send(atRequest);
+    connected_nodes.clear();
+    discovering = true;
+    while(discovery_timeout > 0 && discovering){
+      int discovery_counter = 0;
+      int value = 0;
+      int size_before = connected_nodes.size();
+      //Serial.print("Size before:");
+      //Serial.println(size_before);
+      //Serial.println("Sending command to the XBee");
+      xbee.send(atRequest);
 
-    // Let it run this loop 5 times (= 2 seconds max)  
-    while (discovery_counter++ < 2) {
-      // wait up to 1 second for the status response
-      value = check_for_messages(400, 0);
-      if(value != 0 && value != 1 && value != 2 && value != 3){
-        add_node(value); // this is the ID    
+      // Let it run this loop 5 times (= 2 seconds max)  
+      while (discovery_counter++ < 5) {
+        // wait up to 1 second for the status response
+        value = check_for_messages(400, 0);
+        if(value != 0 && value != 1 && value != 2 && value != 3){
+          add_node(value); // this is the ID    
+        }
       }
-    }
-
-    int size_after = connected_nodes.size();
-    // Serial.print("Size after:");
-    // Serial.println(size_after);
-    // Serial.print("disc timeout:");
-    // Serial.println(discovery_timeout);
-    
-    // If the size has changed, reset the counter
-    if (size_after - size_before > 0) {
-      discovery_timeout = DISCOVERY_ROUNDS;
-    } else {
-      discovery_timeout--;
-    }
   
-    lastDiscoveryTime = millis();
-    Serial.println();
-    if(discovery_timeout == 0){
-       // We now have enough consistent info to decide roles 
-       decide_role(connected_nodes);
-       
-      // Print the values in our vector
-      Serial.print("Num of connected_nodes is: ");
-      Serial.println(connected_nodes.size());
-      
-      for (int i = 0; i < connected_nodes.size(); i++) {
-        Serial.print(connected_nodes[i]);
-        Serial.print(" ");
-        Serial.println("Listen for messages state...");
+      int size_after = connected_nodes.size();
+
+      // If the size has changed, reset the counter
+      if (size_after - size_before > 0) {
+        discovery_timeout = DISCOVERY_ROUNDS;
+      } else {
+        discovery_timeout--;
       }
-      
+    }
+    lastDiscoveryTime = millis();
+    
+     // We now have enough consistent info to decide roles 
+     discovering = false;
+     decide_role(connected_nodes);
+     
+    // Print the values in our vector
+    Serial.print("Num of connected_nodes is: ");
+    Serial.println(connected_nodes.size());
+    
+    for (int i = 0; i < connected_nodes.size(); i++) {
+      Serial.print(connected_nodes[i]);
+      Serial.print(" ");
+      Serial.println("Listen for messages state...");
+     }
+        
       // Switch to listening state
       state = LISTEN_FOR_MESSAGES;
 
       // reset for next discovery
       discovery_timeout = DISCOVERY_ROUNDS;
-    }
 }
 
 void setup() {
@@ -301,19 +313,12 @@ void loop() {
     output_to_leds(my_role);
     old_role = my_role; 
   }
-  
-//  // Check if its time to scan the network again (periodic checkup)
-//  if ((millis() - lastDiscoveryTime) > discoveryDelay) {
-//    delay_counter = -1; // Force into the delay_counter loop
-//    discovery_timeout = DISCOVERY_ROUNDS;
-//    old_connected_nodes = connected_nodes;  // save in case we need it
-//    connected_nodes.clear();                // This will let us remove any dropped nodes
-//    add_node(myId);
-//    
-//    // Update state
-//    state = DISCOVERY;
-//  }
 
+   // Re-discover if haven't hard from leader in 15 seconds
+   if (my_role != LEADER && ((millis() - lastHeardFromLeaderTime) > hearFromLeaderDelay)) {
+    Serial.println("Haven't heard from leader--rediscovering");
+    state = DISCOVERY;
+   }
    // Infected nodes need to send infect message every 2 seconds
   if (my_role == FOLLOWER_INFECTED && (millis() - lastInfectTime) > infectDelay) {
     Serial.println("Sending infect message");
@@ -339,6 +344,7 @@ void loop() {
         
     if (state == DISCOVERY) {
       // If we are in a discovery state
+      Serial.println("Discovering state activated");
       runDiscovery();
       
     } else if (state == LISTEN_FOR_MESSAGES) {
@@ -358,10 +364,12 @@ void loop() {
             output_to_leds(my_role);
             delay(3000);
           }  
-        } else if (value == 3) { // LEADER IS ALIVE
+        } else if (value == 3) { // LEADER IS ALIVE 
+            lastHeardFromLeaderTime = millis();
             lastDiscoveryTime = millis(); // reset the time we are waiting to initiate Discovery again 
             if (my_role == LEADER) {
-              runDiscovery();
+              Serial.println("Seems to be 2 leaders, rediscovering...");
+              state = DISCOVERY;
             }
 
         }
