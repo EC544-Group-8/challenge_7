@@ -63,13 +63,13 @@ unsigned long lastDiscoveryTime = 0;
 unsigned long discoveryDelay = 10000;
 
 unsigned long lastInfectTime = 0;
-unsigned long infectDelay = 2000; //2 seconds
+unsigned long infectDelay = 5000; //2 seconds
 
 unsigned long lastLeaderTime = 0;
 unsigned long leaderDelay = 10000;
 
 unsigned long lastHeardFromLeaderTime = 0;
-unsigned long hearFromLeaderDelay = 12000;
+unsigned long hearFromLeaderDelay = 20000;
 
 void add_node(int id) {
     if (id == 1 || id == 2 || id == 3)
@@ -236,8 +236,9 @@ void decide_role(std::vector<int> connected_nodes) {
 
 int runDiscovery() {
     connected_nodes.clear();
+    connected_nodes.push_back(myId);
     discovering = true;
-    while(discovery_timeout > 0 && discovering){
+    while((discovery_timeout > 0) && discovering){
       int discovery_counter = 0;
       int value = 0;
       int size_before = connected_nodes.size();
@@ -355,6 +356,7 @@ void loop() {
         if(value == 1) { // INFECT MESSAGE
           if(my_role != LEADER){
             my_role = FOLLOWER_INFECTED; 
+            //xbeeSerial.flush();
           }
         } else if (value == 2) { // CLEAR MESSAGE
           if(my_role != LEADER){
@@ -370,6 +372,7 @@ void loop() {
             if (my_role == LEADER) {
               Serial.println("Seems to be 2 leaders, rediscovering...");
               state = DISCOVERY;
+              //xbeeSerial.flush();
             }
 
         }
