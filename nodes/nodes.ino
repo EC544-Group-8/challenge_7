@@ -15,7 +15,7 @@
 #define FOLLOWER_INFECTED 2
 
 // discovery parameters
-#define DISCOVERY_ROUNDS 3
+#define DISCOVERY_ROUNDS 2
 
 // states
 #define DISCOVERY 0
@@ -28,7 +28,8 @@ int my_role = FOLLOWER_CLEAR; // Start as non-infected follower
 
 int state = 0;
 int delay_counter = DELAY_COUNTER_MAX;
-
+int Received = 0;
+bool firstDiscovery = true;
 
 // Xbee Declarations
 AtCommandResponse atResponse = AtCommandResponse();
@@ -57,19 +58,19 @@ bool discovering = true;
 
 // to measure time in ms
 unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
-unsigned long debounceDelay = 2;    // the debounce time; increase if the output flickers
+unsigned long debounceDelay = 10;    // the debounce time; increase if the output flickers
 
 unsigned long lastDiscoveryTime = 0;
 unsigned long discoveryDelay = 10000;
 
 unsigned long lastInfectTime = 0;
-unsigned long infectDelay = 2000; //2 seconds
+unsigned long infectDelay = 5000; //2 seconds
 
 unsigned long lastLeaderTime = 0;
-unsigned long leaderDelay = 10000;
+unsigned long leaderDelay = 6000;
 
 unsigned long lastHeardFromLeaderTime = 0;
-unsigned long hearFromLeaderDelay = 12000;
+unsigned long hearFromLeaderDelay = 20000;
 
 void add_node(int id) {
     if (id == 1 || id == 2 || id == 3)
@@ -78,7 +79,8 @@ void add_node(int id) {
     // If not already connected
     //Serial.print("ID is:");
     //Serial.println(id);
-    
+
+    // prevents adding duplicates 
     if (std::find(connected_nodes.begin(), connected_nodes.end(), id) == connected_nodes.end()) {
         Serial.println("pushing to vector");
         connected_nodes.push_back(id);
@@ -144,12 +146,15 @@ void handleButtonPress() {
       Serial.println("Initiate Clear message");
       // The leader sends 1 CLEAR message
       xbee.send(clearTx);
+      //delay(100);
 
   } else {
       // For any other my_role, you are now infected
       Serial.println("button infected");
       my_role = FOLLOWER_INFECTED;
       lastInfectTime = millis();
+      xbee.send(infectTx);
+
   }
 }
  
@@ -181,12 +186,19 @@ int check_for_messages(int wait_time, int index){
       value = rx.getData(0);
 
       // Receive word from leader in middle of discovery
-      if (discovering && value == 3) {
-        if (old_role == -1)
+      Serial.print("Discovering: ");
+      Serial.println(discovering);
+      Serial.print("Value: ");
+      Serial.println(value);
+      if (discovering && (value == 3)) {
+        if (old_role == -1) {
+          Serial.println("Setting Follower Clear");
           my_role = FOLLOWER_CLEAR; // haven't had a role yet
-        else
-          my_role = old_role;  // resume previous role
-
+        }
+        else {
+          Serial.println("Setting old role");
+          my_role = (old_role == LEADER) ? FOLLOWER_CLEAR : old_role;  // resume previous role
+        }
         discovering = false;
       }
       
@@ -194,8 +206,8 @@ int check_for_messages(int wait_time, int index){
       //Serial.println("UNKNOWN RESPONSE");
       //Serial.println(xbee.getResponse().getApiId());
     }
-    
   }
+  // clear the buffer ?
   return value;
 }
 
@@ -205,11 +217,12 @@ int get_my_id() {
   Serial.println("Sending my command to the XBee");
   // send the command
   xbee.send(myIdRequest);
+  //delay(100);
  
   // wait up to 1 second for the status response
   // This needs to be changed to address
   value = check_for_messages(400, 0);
-  if(value != 0){
+  if(value != 0 && value != 1 && value != 2 && value != 3){
     add_node(value); // this is the ID    
   }
   return value;
@@ -220,24 +233,33 @@ void decide_role(std::vector<int> connected_nodes) {
   Serial.println("DECIDE ROLES");
   Serial.println(myId);
   Serial.println(*std::max_element(connected_nodes.begin(), connected_nodes.end()));
-  if (connected_nodes.size() == 1) {
+  if ((connected_nodes.size() == 1)) {
     my_role = LEADER;
+    //xbee.send(leaderTx);
 
-  } else if (myId == *std::max_element(connected_nodes.begin(), connected_nodes.end())) {
+  } else if ((connected_nodes.size() > 1) && (myId == *std::max_element(connected_nodes.begin(), connected_nodes.end()))) {
     my_role = LEADER;
+    //xbee.send(leaderTx);
 
   } else {
     // Non-leader, only update if not infected
-    if(old_role != FOLLOWER_INFECTED){
+    if(old_role == -1){
       my_role = FOLLOWER_CLEAR; 
+    } else if (old_role == LEADER) {
+      my_role = FOLLOWER_CLEAR;
+    } else {
+      my_role = old_role;
     }
   }
 }
 
 int runDiscovery() {
+    //xbeeSerial.flush(); // is this actually helping?
+    //old_connected_nodes = connected_nodes;
     connected_nodes.clear();
+    connected_nodes.push_back(myId);
     discovering = true;
-    while(discovery_timeout > 0 && discovering){
+    while((discovery_timeout > 0) && discovering) {
       int discovery_counter = 0;
       int value = 0;
       int size_before = connected_nodes.size();
@@ -245,40 +267,49 @@ int runDiscovery() {
       //Serial.println(size_before);
       //Serial.println("Sending command to the XBee");
       xbee.send(atRequest);
+      //delay(1000);
 
-      // Let it run this loop 5 times (= 2 seconds max)  
-      while (discovery_counter++ < 5) {
-        // wait up to 1 second for the status response
-        value = check_for_messages(400, 0);
-        if(value != 0 && value != 1 && value != 2 && value != 3){
-          add_node(value); // this is the ID    
+      // Let it run this loop 5 times (= 2 seconds max)
+      //while (discovery_counter++ < 5) 
+        while (discovery_counter++ < 5) {
+          // wait up to 1 second for the status response
+          value = check_for_messages(400, 0); //originally 400 ms delay lest change it to smaller...
+          if(value != 0 && value != 1 && value != 2 && value != 3){
+            add_node(value); // this is the ID
+            break;    
+          }
         }
-      }
-  
+      
       int size_after = connected_nodes.size();
 
       // If the size has changed, reset the counter
       if (size_after - size_before > 0) {
         discovery_timeout = DISCOVERY_ROUNDS;
-      } else {
-        discovery_timeout--;
+      } else if (value != 0 && value != 1 && value != 2 && value != 3) {
+          // Only decrease this if it's not a message
+
+       if(!(value == 200 && myId == 200)) // Xbee #200 is buggy so this fixes it
+            discovery_timeout--;
       }
-    }
+   }
+    lastHeardFromLeaderTime = millis(); // reset leader time
     lastDiscoveryTime = millis();
     
      // We now have enough consistent info to decide roles 
-     discovering = false;
-     decide_role(connected_nodes);
-     
+    if(discovering)
+        decide_role(connected_nodes);
+        
+    discovering = false;
+
     // Print the values in our vector
     Serial.print("Num of connected_nodes is: ");
     Serial.println(connected_nodes.size());
     
     for (int i = 0; i < connected_nodes.size(); i++) {
       Serial.print(connected_nodes[i]);
-      Serial.print(" ");
-      Serial.println("Listen for messages state...");
+      Serial.print("--");
      }
+    Serial.println("The above are the R/x Xbees...");
         
       // Switch to listening state
       state = LISTEN_FOR_MESSAGES;
@@ -314,15 +345,20 @@ void loop() {
     old_role = my_role; 
   }
 
-   // Re-discover if haven't hard from leader in 15 seconds
+   // Re-discover if haven't hard from leader in 20 seconds
    if (my_role != LEADER && ((millis() - lastHeardFromLeaderTime) > hearFromLeaderDelay)) {
     Serial.println("Haven't heard from leader--rediscovering");
+//    int pos = std::find(connected_nodes.begin(),connected_nodes.end(),*std::max_element(connected_nodes.begin(), connected_nodes.end())); //-----------------------
+//    if (connected_nodes.size() > 1) {
+//      connected_nodes.erase(connected_nodes.begin()+pos); //-------------------------------------------
+//    }
     state = DISCOVERY;
    }
    // Infected nodes need to send infect message every 2 seconds
   if (my_role == FOLLOWER_INFECTED && (millis() - lastInfectTime) > infectDelay) {
     Serial.println("Sending infect message");
     xbee.send(infectTx);
+    //delay(100);
 
     // Reset last infect time
     lastInfectTime = millis();
@@ -332,6 +368,7 @@ void loop() {
   if (my_role == LEADER && (millis() - lastLeaderTime) > leaderDelay) {
     Serial.println("Sending leader message");
     xbee.send(leaderTx);
+    //delay(100);
 
     // Reset last infect time
     lastLeaderTime = millis();
@@ -354,7 +391,9 @@ void loop() {
       if(value != 0){
         if(value == 1) { // INFECT MESSAGE
           if(my_role != LEADER){
-            my_role = FOLLOWER_INFECTED; 
+            my_role = FOLLOWER_INFECTED;
+            lastInfectTime = millis();
+            //xbeeSerial.flush();
           }
         } else if (value == 2) { // CLEAR MESSAGE
           if(my_role != LEADER){
@@ -370,8 +409,8 @@ void loop() {
             if (my_role == LEADER) {
               Serial.println("Seems to be 2 leaders, rediscovering...");
               state = DISCOVERY;
+              //xbeeSerial.flush();
             }
-
         }
         Serial.println("GOT A MESSAGE"); // Need a convention for sending and receiving these types of messages    
         Serial.println(value); // this is the messageID, need to do something with it   
