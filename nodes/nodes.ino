@@ -58,7 +58,7 @@ bool discovering = true;
 
 // to measure time in ms
 unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
-unsigned long debounceDelay = 2;    // the debounce time; increase if the output flickers
+unsigned long debounceDelay = 10;    // the debounce time; increase if the output flickers
 
 unsigned long lastDiscoveryTime = 0;
 unsigned long discoveryDelay = 10000;
@@ -197,7 +197,6 @@ int check_for_messages(int wait_time, int index){
       //Serial.println("UNKNOWN RESPONSE");
       //Serial.println(xbee.getResponse().getApiId());
     }
-    
   }
   // clear the buffer ?
   return value;
@@ -248,8 +247,8 @@ void decide_role(std::vector<int> connected_nodes) {
 int runDiscovery() {
     //xbeeSerial.flush(); // is this actually helping?
     //old_connected_nodes = connected_nodes;
-    //connected_nodes.clear();
-    //connected_nodes.push_back(myId);
+    connected_nodes.clear();
+    connected_nodes.push_back(myId);
     discovering = true;
     while((discovery_timeout > 0) && discovering) {
       int discovery_counter = 0;
@@ -333,10 +332,10 @@ void loop() {
    // Re-discover if haven't hard from leader in 20 seconds
    if (my_role != LEADER && ((millis() - lastHeardFromLeaderTime) > hearFromLeaderDelay)) {
     Serial.println("Haven't heard from leader--rediscovering");
-    int pos = std::find(connected_nodes.begin(),connected_nodes.end(),*std::max_element(connected_nodes.begin(), connected_nodes.end())); //-----------------------
-    if (connected_nodes.size() > 1) {
-      connected_nodes.erase(connected_nodes.begin()+pos); //-------------------------------------------
-    }
+//    int pos = std::find(connected_nodes.begin(),connected_nodes.end(),*std::max_element(connected_nodes.begin(), connected_nodes.end())); //-----------------------
+//    if (connected_nodes.size() > 1) {
+//      connected_nodes.erase(connected_nodes.begin()+pos); //-------------------------------------------
+//    }
     state = DISCOVERY;
    }
    // Infected nodes need to send infect message every 2 seconds
@@ -395,7 +394,6 @@ void loop() {
               state = DISCOVERY;
               //xbeeSerial.flush();
             }
-
         }
         Serial.println("GOT A MESSAGE"); // Need a convention for sending and receiving these types of messages    
         Serial.println(value); // this is the messageID, need to do something with it   
