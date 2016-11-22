@@ -275,7 +275,8 @@ int runDiscovery() {
           // wait up to 1 second for the status response
           value = check_for_messages(400, 0); //originally 400 ms delay lest change it to smaller...
           if(value != 0 && value != 1 && value != 2 && value != 3){
-            add_node(value); // this is the ID    
+            add_node(value); // this is the ID
+            break;    
           }
         }
       
@@ -286,7 +287,9 @@ int runDiscovery() {
         discovery_timeout = DISCOVERY_ROUNDS;
       } else if (value != 0 && value != 1 && value != 2 && value != 3) {
           // Only decrease this if it's not a message
-        discovery_timeout--;
+
+       if(!(value == 200 && myId == 200)) // Xbee #200 is buggy so this fixes it
+            discovery_timeout--;
       }
    }
     lastHeardFromLeaderTime = millis(); // reset leader time
