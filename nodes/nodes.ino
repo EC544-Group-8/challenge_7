@@ -15,7 +15,7 @@
 #define FOLLOWER_INFECTED 2
 
 // discovery parameters
-#define DISCOVERY_ROUNDS 3
+#define DISCOVERY_ROUNDS 2
 
 // states
 #define DISCOVERY 0
@@ -67,10 +67,10 @@ unsigned long lastInfectTime = 0;
 unsigned long infectDelay = 5000; //2 seconds
 
 unsigned long lastLeaderTime = 0;
-unsigned long leaderDelay = 9000;
+unsigned long leaderDelay = 6000;
 
 unsigned long lastHeardFromLeaderTime = 0;
-unsigned long hearFromLeaderDelay = 19000;
+unsigned long hearFromLeaderDelay = 20000;
 
 void add_node(int id) {
     if (id == 1 || id == 2 || id == 3)
@@ -153,6 +153,8 @@ void handleButtonPress() {
       Serial.println("button infected");
       my_role = FOLLOWER_INFECTED;
       lastInfectTime = millis();
+      xbee.send(infectTx);
+
   }
 }
  
@@ -184,12 +186,19 @@ int check_for_messages(int wait_time, int index){
       value = rx.getData(0);
 
       // Receive word from leader in middle of discovery
-      if (discovering && value == 3) {
-        if (old_role == -1)
+      Serial.print("Discovering: ");
+      Serial.println(discovering);
+      Serial.print("Value: ");
+      Serial.println(value);
+      if (discovering && (value == 3)) {
+        if (old_role == -1) {
+          Serial.println("Setting Follower Clear");
           my_role = FOLLOWER_CLEAR; // haven't had a role yet
-        else
+        }
+        else {
+          Serial.println("Setting old role");
           my_role = (old_role == LEADER) ? FOLLOWER_CLEAR : old_role;  // resume previous role
-
+        }
         discovering = false;
       }
       
@@ -213,7 +222,7 @@ int get_my_id() {
   // wait up to 1 second for the status response
   // This needs to be changed to address
   value = check_for_messages(400, 0);
-  if(value != 0){
+  if(value != 0 && value != 1 && value != 2 && value != 3){
     add_node(value); // this is the ID    
   }
   return value;
@@ -275,16 +284,20 @@ int runDiscovery() {
       // If the size has changed, reset the counter
       if (size_after - size_before > 0) {
         discovery_timeout = DISCOVERY_ROUNDS;
-      } else {
+      } else if (value != 0 && value != 1 && value != 2 && value != 3) {
+          // Only decrease this if it's not a message
         discovery_timeout--;
       }
    }
+    lastHeardFromLeaderTime = millis(); // reset leader time
     lastDiscoveryTime = millis();
     
      // We now have enough consistent info to decide roles 
-     discovering = false;
-     decide_role(connected_nodes);
-     
+    if(discovering)
+        decide_role(connected_nodes);
+        
+    discovering = false;
+
     // Print the values in our vector
     Serial.print("Num of connected_nodes is: ");
     Serial.println(connected_nodes.size());
@@ -375,7 +388,8 @@ void loop() {
       if(value != 0){
         if(value == 1) { // INFECT MESSAGE
           if(my_role != LEADER){
-            my_role = FOLLOWER_INFECTED; 
+            my_role = FOLLOWER_INFECTED;
+            lastInfectTime = millis();
             //xbeeSerial.flush();
           }
         } else if (value == 2) { // CLEAR MESSAGE
